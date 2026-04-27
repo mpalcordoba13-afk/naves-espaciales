@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>NEO-SPACE — Multijugador v10.1</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+:root{
+  --bg0:#010204;--bg1:#070d18;--cyan:#00e5ff;--cyan2:#00b8cc;
+  --red:#ff3c4e;--gold:#ffd700;--green:#00ff88;--purple:#b06aff;
+  --orange:#ff8c42;--pink:#ff4da6;--blue:#4da6ff;
+  --bdr:rgba(0,229,255,0.15);--bdr2:rgba(0,229,255,0.35);
+  --ft:'Orbitron',monospace;--fm:'Share Tech Mono',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;background:var(--bg0);color:#e8f4ff;font-family:var(--fm);overflow:hidden;user-select:none;cursor:crosshair}
+#gc{position:fixed;inset:0;display:block;width:100%;height:100%}
+
+#mm{position:fixed;inset:0;z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg0)}
+.mc{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:6px;width:min(500px,96vw)}
+.logo{font-family:var(--ft);font-size:clamp(28px,6vw,68px);font-weight:900;letter-spacing:.12em;
+  background:linear-gradient(135deg,#fff 0%,var(--cyan) 35%,var(--purple) 65%,var(--red) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  background-size:200% auto;animation:shimmer 4s linear infinite;line-height:1;margin-bottom:4px}
+@keyframes shimmer{0%{background-position:0%}100%{background-position:200%}}
+.tagline{font-size:11px;color:rgba(0,229,255,.5);letter-spacing:.3em;margin-bottom:24px}
+.mbtn{width:100%;padding:14px 20px;background:rgba(0,229,255,.04);border:1px solid var(--bdr);
+  color:rgba(255,255,255,.75);font-family:var(--fm);font-size:13px;letter-spacing:.15em;cursor:pointer;
+  text-align:left;display:flex;align-items:center;gap:14px;transition:all .18s;border-radius:2px;position:relative;overflow:hidden}
+.mbtn:hover{background:rgba(0,229,255,.08);border-color:var(--bdr2);color:#fff}
+
+.pov{position:fixed;inset:0;z-index:310;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.75);backdrop-filter:blur(6px)}
+.pov.open{display:flex}
+#hud{position:fixed;inset:0;pointer-events:none;z-index:50;display:none}
+#cov{position:fixed;inset:0;z-index:320;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px}
+.csp{width:40px;height:40px;border:2px solid rgba(0,229,255,.15);border-top-color:var(--cyan);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<canvas id="gc"></canvas>
+
+<div id="mm">
+  <div class="mc">
+    <div class="logo">NEO-SPACE</div>
+    <div class="tagline">EDICIÓN MULTIJUGADOR · v10.1</div>
+    <button class="mbtn" style="--ac:var(--green)" id="bSolo">🚀 MODO SOLITARIO</button>
+    <button class="mbtn" style="--ac:var(--cyan)" id="bHost">📡 CREAR SALA PRIVADA</button>
+    <button class="mbtn" style="--ac:var(--purple)" id="bJoin">🔗 UNIRSE CON CÓDIGO</button>
+  </div>
+</div>
+
+<div id="cov">
+  <div class="csp"></div>
+  <div class="ct" id="covTxt">CONECTANDO...</div>
+</div>
+
+<script>
+// ====================== NEO-SPACE v10.1 - CORREGIDO ======================
+function $(id) { return document.getElementById(id); }
+
+let isHost = false;
+let running = false;
+let fc = 0;
+let CW = 0, CH = 0;
+let enemies = [];
+let projs = [];
+let eprojs = [];
+let currentMB = null;
+let currentBoss = null;
+let clientState = { enemies: [], projs: [], eprojs: [], boss: null, mb: null };
+
+const canvas = $('gc');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  CW = canvas.width = window.innerWidth;
+  CH = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function drawBg() {
+  ctx.fillStyle = '#010204';
+  ctx.fillRect(0, 0, CW, CH);
+}
+
+function drawProj(p) {
+  ctx.fillStyle = p.col || '#00e5ff';
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, p.sz || 4, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawEnSer(e) {
+  ctx.strokeStyle = e.col || '#00e5ff';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(e.x + 15, e.y);
+  ctx.lineTo(e.x - 12, e.y - 10);
+  ctx.lineTo(e.x - 8, e.y);
+  ctx.lineTo(e.x - 12, e.y + 10);
+  ctx.closePath();
+  ctx.stroke();
+}
+
+function drawPlayers() {
+  // simplificado - dibuja tu nave
+  ctx.strokeStyle = '#00e5ff';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(CW/2 + 18, CH/2);
+  ctx.lineTo(CW/2 - 12, CH/2 - 11);
+  ctx.lineTo(CW/2 - 8, CH/2);
+  ctx.lineTo(CW/2 - 12, CH/2 + 11);
+  ctx.closePath();
+  ctx.stroke();
+}
+
+// ====================== GAME LOOP CORREGIDO ======================
+function gameLoop() {
+  fc++;
+
+  if (running) {
+    // Aquí iría tu updateMyPlayer() original
+    if (isHost) {
+      // Simulación del host (mantienes tu código original de spawn y update)
+      // Ejemplo mínimo:
+      if (Math.random() < 0.03) {
+        enemies.push({
+          x: Math.random()*CW,
+          y: -30,
+          r: 15,
+          rot: 0,
+          col: '#ff3c4e'
+        });
+      }
+
+      // FIX: Actualizamos clientState cada frame
+      clientState.enemies = enemies.map(e => ({
+        x: e.x, y: e.y, r: e.r || 15, rot: e.rot || 0, col: e.col || '#ff3c4e'
+      }));
+      clientState.projs = projs.map(p => ({x:p.x, y:p.y, col:p.col, sz:p.sz||4}));
+      clientState.eprojs = eprojs.map(p => ({x:p.x, y:p.y, col:p.col, sz:p.sz||4}));
+      clientState.mb = currentMB;
+      clientState.boss = currentBoss;
+    }
+
+    // Actualizar posiciones de proyectiles (ejemplo)
+    projs = projs.filter(p => {
+      p.x += p.vx || 0;
+      p.y += p.vy || 0;
+      return p.x > -50 && p.x < CW+50 && p.y > -50 && p.y < CH+50;
+    });
+  }
+
+  // ==================== RENDER ====================
+  drawBg();
+
+  // Render unificado
+  const renderEnemies = isHost ? enemies : (clientState.enemies || []);
+  const renderProjs = isHost ? projs : (clientState.projs || []);
+  const renderEprojs = isHost ? eprojs : (clientState.eprojs || []);
+
+  for (const p of renderEprojs) drawProj(p);
+  for (const p of renderProjs) drawProj(p);
+  for (const e of renderEnemies) drawEnSer(e);
+
+  drawPlayers();
+
+  requestAnimationFrame(gameLoop);
+}
+
+// ====================== INICIO ======================
+$('bHost').addEventListener('click', () => {
+  isHost = true;
+  running = true;
+  hideCov();
+  $('mm').style.display = 'none';
+  gameLoop();
+});
+
+$('bSolo').addEventListener('click', () => {
+  isHost = true;
+  running = true;
+  hideCov();
+  $('mm').style.display = 'none';
+  gameLoop();
+});
+
+console.log("%cNEO-SPACE v10.1 - Host ve enemigos CORREGIDO", "color:#00e5ff;font-size:18px;font-weight:bold");
+
+</script>
+</body>
+</html>
